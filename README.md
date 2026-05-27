@@ -90,3 +90,10 @@ pip install -r requirements.txt
 python app.py
 # Acesse: http://localhost:8000
 ```
+## RM's
+
+André Soler - RM98827
+Fabrizio Maia - RM551869
+Rodrigo Paixão - RM968669
+Victor Asfur - RM551684
+Vitor Shimizu - RM550390
