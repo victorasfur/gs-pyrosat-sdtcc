@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PyroSat — Sistema de Alerta Precoce de Queimadas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #09090f;
+    --surface: #111118;
+    --surface2: #16161f;
+    --border: rgba(255,255,255,0.07);
+    --border-bright: rgba(255,255,255,0.14);
+    --accent: #ff4d1c;
+    --accent2: #ff8c42;
+    --warn: #ffd166;
+    --safe: #06d6a0;
+    --text: #f0ede8;
+    --muted: #8b8896;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  /* TOP NAV */
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 2rem; height: 56px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 1000;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 28px; height: 28px; }
+  .logo-text { font-family: var(--mono); font-weight: 700; font-size: 14px; letter-spacing: 0.08em; }
+  .logo-text span { color: var(--accent); }
+  .nav-pills { display: flex; gap: 6px; }
+  .pill {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-bright);
+    color: var(--muted);
+  }
+  .pill.active { border-color: var(--accent); color: var(--accent); background: rgba(255,77,28,0.08); }
+  .satellite-status { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--safe); }
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--safe); animation: blink 2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* LAYOUT */
+  .app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: auto 1fr; height: calc(100vh - 56px); }
+  
+  /* SIDEBAR */
+  .sidebar {
+    grid-row: 1 / 3; background: var(--surface); border-right: 1px solid var(--border);
+    overflow-y: auto; display: flex; flex-direction: column; gap: 0;
+  }
+  .sidebar-section { border-bottom: 1px solid var(--border); padding: 1.25rem; }
+  .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 12px; }
+
+  /* STAT GRID */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card {
+    background: var(--surface2); border-radius: 8px; padding: 12px;
+    border: 1px solid var(--border);
+  }
+  .stat-val { font-family: var(--mono); font-size: 22px; font-weight: 700; line-height: 1; }
+  .stat-val.red { color: var(--accent); }
+  .stat-val.amber { color: var(--warn); }
+  .stat-val.green { color: var(--safe); }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ALERTS */
+  .alert-item { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid transparent; }
+  .alert-item.critical { border-left-color: var(--accent); }
+  .alert-item.high { border-left-color: var(--warn); }
+  .alert-item.moderate { border-left-color: var(--safe); }
+  .alert-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .alert-badge {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em;
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .badge-critical { background: rgba(255,77,28,0.15); color: var(--accent); }
+  .badge-high { background: rgba(255,209,102,0.15); color: var(--warn); }
+  .badge-moderate { background: rgba(6,214,160,0.12); color: var(--safe); }
+  .alert-region { font-size: 12px; font-weight: 500; color: var(--text); }
+  .alert-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .alert-spread { font-size: 11px; color: var(--muted); margin-top: 4px; font-style: italic; }
+
+  /* RISK BAR */
+  .risk-bar-wrap { margin-top: 6px; }
+  .risk-bar-track { height: 3px; background: var(--border-bright); border-radius: 2px; }
+  .risk-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+
+  /* FIRE TABLE */
+  .fire-list { display: flex; flex-direction: column; gap: 6px; }
+  .fire-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; background: var(--surface2); border-radius: 6px;
+    border: 1px solid var(--border); cursor: pointer; transition: border-color 0.2s;
+  }
+  .fire-row:hover { border-color: var(--border-bright); }
+  .fire-row-left { display: flex; flex-direction: column; gap: 2px; }
+  .fire-state { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .fire-biome { font-size: 10px; color: var(--muted); }
+  .fire-frp { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent); }
+  .fire-frp-label { font-size: 9px; color: var(--muted); text-align: right; }
+
+  /* TOP BAR */
+  .topbar { padding: 1rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .topbar-title { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .topbar-title strong { color: var(--text); }
+  .ods-tags { display: flex; gap: 6px; }
+  .ods-tag { font-family: var(--mono); font-size: 9px; padding: 3px 8px; border-radius: 3px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-bright); color: var(--muted); }
+
+  /* MAP */
+  #map { height: 100%; background: #0a0a12; }
+  .leaflet-container { background: #0d1117 !important; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.6) saturate(0.7); }
+
+  /* LEGEND */
+  .map-legend {
+    position: absolute; bottom: 24px; right: 16px; z-index: 999;
+    background: rgba(9,9,15,0.92); border: 1px solid var(--border-bright);
+    border-radius: 8px; padding: 12px 14px; font-family: var(--mono); font-size: 10px;
+  }
+  .legend-title { color: var(--muted); letter-spacing: 0.1em; margin-bottom: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; color: var(--text); margin-bottom: 4px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* FOOTER */
+  .sidebar-footer { padding: 1rem 1.25rem; margin-top: auto; }
+  .footer-text { font-size: 10px; color: var(--muted); line-height: 1.6; }
+  .footer-text a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">
+    <svg class="logo-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="14" cy="14" r="13" stroke="#ff4d1c" stroke-width="1.5" opacity="0.4"/>
+      <circle cx="14" cy="14" r="8" stroke="#ff4d1c" stroke-width="1" opacity="0.6"/>
+      <path d="M14 6 C14 6 10 11 10 15 C10 17.2 11.8 19 14 19 C16.2 19 18 17.2 18 15 C18 11 14 6 14 6Z" fill="#ff4d1c" opacity="0.9"/>
+      <path d="M14 12 C14 12 12 14.5 12 16 C12 17.1 12.9 18 14 18 C15.1 18 16 17.1 16 16 C16 14.5 14 12 14 12Z" fill="#ff8c42"/>
+    </svg>
+    <span class="logo-text"><span>Pyro</span>Sat</span>
+  </div>
+  <div class="nav-pills">
+    <span class="pill active">MAPA AO VIVO</span>
+    <span class="pill">PREVISÃO</span>
+    <span class="pill">RELATÓRIOS</span>
+  </div>
+  <div class="satellite-status">
+    <div class="pulse"></div>
+    3 satélites ativos — último passe 14:32 UTC
+  </div>
+</nav>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="section-label">ESTATÍSTICAS GLOBAIS</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val red" id="stat-fires">—</div>
+          <div class="stat-label">Focos ativos</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val red" id="stat-critical">—</div>
+          <div class="stat-label">Alertas críticos</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val amber" id="stat-area">—</div>
+          <div class="stat-label">km² em risco</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val green" id="stat-sats">—</div>
+          <div class="stat-label">Satélites online</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">ALERTAS DE PROPAGAÇÃO</div>
+      <div id="alerts-list"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">FOCOS DETECTADOS (FRP MW)</div>
+      <div class="fire-list" id="fires-list"></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="footer-text">
+        Dados: INPE QUEIMADAS + NASA FIRMS (simulado)<br>
+        Conectado: <strong>ODS 13 · ODS 15 · ODS 11</strong><br>
+        Infraestrutura: Microsoft Azure App Service<br>
+        <br>
+        <a href="#">Ver repositório GitHub</a> · <a href="/health">Health check</a>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main style="display:flex; flex-direction:column; overflow:hidden;">
+    <div class="topbar">
+      <div class="topbar-title">
+        <strong>Mapa de calor orbital</strong> — Focos ativos e vetor de propagação em tempo real
+      </div>
+      <div class="ods-tags">
+        <span class="ods-tag">ODS 13 CLIMA</span>
+        <span class="ods-tag">ODS 15 TERRESTRE</span>
+        <span class="ods-tag">ODS 11 CIDADES</span>
+      </div>
+    </div>
+
+    <div style="position:relative; flex:1;">
+      <div id="map"></div>
+      <div class="map-legend">
+        <div class="legend-title">INTENSIDADE (FRP)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff4d1c"></div> Alta (&gt;100 MW)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff8c42"></div> Média (50–100 MW)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ffd166"></div> Baixa (&lt;50 MW)</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([-10, -55], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+  function frpColor(frp) {
+    if (frp >= 100) return '#ff4d1c';
+    if (frp >= 50) return '#ff8c42';
+    return '#ffd166';
+  }
+  function frpRadius(frp) { return Math.max(8, Math.min(28, frp / 6)); }
+
+  async function loadData() {
+    const [statsRes, alertsRes, firesRes] = await Promise.all([
+      fetch('/api/stats'), fetch('/api/alerts'), fetch('/api/fires')
+    ]);
+    const stats = await statsRes.json();
+    const alertsData = await alertsRes.json();
+    const firesData = await firesRes.json();
+
+    document.getElementById('stat-fires').textContent = stats.active_fires;
+    document.getElementById('stat-critical').textContent = stats.critical_alerts;
+    document.getElementById('stat-area').textContent = stats.area_risk_km2.toLocaleString('pt-BR');
+    document.getElementById('stat-sats').textContent = stats.satellites_active;
+
+    const levelClass = {CRÍTICO:'critical', ALTO:'high', MODERADO:'moderate'};
+    const badgeClass = {CRÍTICO:'badge-critical', ALTO:'badge-high', MODERADO:'badge-moderate'};
+    const alertsList = document.getElementById('alerts-list');
+    alertsData.alerts.forEach(a => {
+      const lc = levelClass[a.level] || 'moderate';
+      const bc = badgeClass[a.level] || 'badge-moderate';
+      const color = a.level==='CRÍTICO'?'#ff4d1c':a.level==='ALTO'?'#ffd166':'#06d6a0';
+      alertsList.innerHTML += `
+        <div class="alert-item ${lc}">
+          <div class="alert-header">
+            <span class="alert-badge ${bc}">${a.level}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--warn)">${a.risk}% risco</span>
+          </div>
+          <div class="alert-region">${a.region}</div>
+          <div class="alert-meta">Vento: ${a.wind} · Umidade: ${a.humidity}</div>
+          <div class="risk-bar-wrap"><div class="risk-bar-track"><div class="risk-bar-fill" style="width:${a.risk}%;background:${color}"></div></div></div>
+          <div class="alert-spread">${a.spread}</div>
+        </div>`;
+    });
+
+    const firesList = document.getElementById('fires-list');
+    firesData.fires.sort((a,b)=>b.frp-a.frp).forEach(f => {
+      firesList.innerHTML += `
+        <div class="fire-row" onclick="map.setView([${f.lat},${f.lon}],8)">
+          <div class="fire-row-left">
+            <span class="fire-state">${f.state} — ${f.biome}</span>
+            <span class="fire-biome">${f.lat.toFixed(1)}°S, ${Math.abs(f.lon).toFixed(1)}°O</span>
+          </div>
+          <div>
+            <div class="fire-frp">${f.frp.toFixed(1)}</div>
+            <div class="fire-frp-label">MW FRP</div>
+          </div>
+        </div>`;
+
+      const circle = L.circleMarker([f.lat, f.lon], {
+        radius: frpRadius(f.frp), fillColor: frpColor(f.frp), color: frpColor(f.frp),
+        weight: 1.5, opacity: 0.9, fillOpacity: 0.55
+      }).addTo(map);
+
+      circle.bindPopup(`
+        <div style="font-family:monospace;font-size:12px;min-width:180px">
+          <b style="color:#ff4d1c">🔥 Foco Ativo</b><br>
+          Estado: <b>${f.state}</b> · Bioma: ${f.biome}<br>
+          FRP: <b>${f.frp} MW</b><br>
+          Confiança: ${f.confidence}<br>
+          Detectado: ${new Date(f.timestamp).toLocaleTimeString('pt-BR')} UTC<br>
+          Coord: ${f.lat.toFixed(4)}, ${f.lon.toFixed(4)}
+        </div>`);
+    });
+  }
+
+  loadData();
+  setInterval(loadData, 60000);
+</script>
+</body>
+</html>
