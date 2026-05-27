@@ -2,8 +2,16 @@ import os
 from flask import Flask, render_template, jsonify
 from datetime import datetime
 import random
+from opencensus.ext.azure.log_exporter import AzureLogHandler
+import logging
 
 app = Flask(__name__)
+
+APPINSIGHTS_KEY = os.environ.get("APPINSIGHTS_INSTRUMENTATIONKEY", "")
+if APPINSIGHTS_KEY:
+    logger = logging.getLogger(__name__)
+    logger.addHandler(AzureLogHandler(connection_string=f"InstrumentationKey={APPINSIGHTS_KEY}"))
+    
 
 # Simulated satellite fire data (INPE/NASA FIRMS style)
 FIRE_DATA = [
