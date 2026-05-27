@@ -118,7 +118,7 @@
   /* MAP */
   #map { height: 100%; background: #0a0a12; }
   .leaflet-container { background: #0d1117 !important; }
-  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.6) saturate(0.7); }
+  .leaflet-tile-pane { opacity: 0.85; }
 
   /* LEGEND */
   .map-legend {
@@ -231,7 +231,10 @@
 
 <script>
   const map = L.map('map', { zoomControl: true, attributionControl: false }).setView([-10, -55], 5);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '© OpenStreetMap'
+}).addTo(map);
 
   function frpColor(frp) {
     if (frp >= 100) return '#ff4d1c';
